@@ -49,6 +49,25 @@ python <skill-dir>\scripts\abaqus_bridge_send.py --file path\to\task.py --timeou
 
 Prefer script files over inline command strings for multi-line code to avoid PowerShell newline escaping problems.
 
+## Built-in Helper Commands
+
+The sender script also provides reusable wrappers for common live-session tasks. These commands still execute through the same main-thread file bridge; they do not introduce a socket server or background CAE object access.
+
+```powershell
+python <skill-dir>\scripts\abaqus_bridge_send.py --get-model-info
+python <skill-dir>\scripts\abaqus_bridge_send.py --list-jobs
+python <skill-dir>\scripts\abaqus_bridge_send.py --set-workdir E:\temp\AbaqusRun
+python <skill-dir>\scripts\abaqus_bridge_send.py --monitor-job-status
+python <skill-dir>\scripts\abaqus_bridge_send.py --monitor-job-status Job-1
+python <skill-dir>\scripts\abaqus_bridge_send.py --submit-job Job-1 --timeout 3600
+python <skill-dir>\scripts\abaqus_bridge_send.py --inspect-odb E:\temp\AbaqusRun\Job-1.odb
+python <skill-dir>\scripts\abaqus_bridge_send.py --capture-viewport E:\temp\AbaqusRun\viewport.png
+```
+
+Use `--get-model-info` before repair scripts when object names are uncertain. Use `--monitor-job-status <job>` before opening large solver files manually; it tails `.sta`/`.log` and extracts high-value diagnostics from `.msg`/`.dat`. Use `--inspect-odb` for fast metadata checks before deeper post-processing. Use `--capture-viewport` when the user needs a local image of the current CAE viewport.
+
+Bridge errors include a short summary, source line excerpt, and common Abaqus hints for `KeyError`, `AttributeError`, `NameError`, and `TypeError`.
+
 ## Standard Abaqus Operation Pattern
 
 - Never modify `Model-1` directly when the user asks for a repair or experiment. Copy it first, commonly:
@@ -65,7 +84,31 @@ vp.setValues(displayedObject=mdb.models["Model-2"].rootAssembly)
 vp.forceRefresh()
 ```
 
-- Save repaired CAE files with `mdb.saveAs(pathName=...)` rather than overwriting the user's original CAE unless they explicitly ask.
+- Keep modifications inside the currently open CAE by default. Do not call `mdb.saveAs(...)` unless the user explicitly asks for a separate CAE file.
+- Before substantial edits, copy the appropriate existing model to a new model name in the same CAE, such as `Model-4` or the next clear model number, and modify only that copied model. Submit test jobs from the copied model so the original remains available for comparison.
+
+## User-Visible Stepwise Workflow
+
+Abaqus/CAE often does not repaint the model tree or viewport while a long Python script is running on the main thread. To keep the user able to watch progress, prefer short, visible operations instead of one large script whenever the task involves modeling, importing, repairing, or inspecting a CAE model.
+
+- Split substantial work into small Abaqus Python task files and send them one at a time through `abaqus_bridge_send.py`. Let each task finish before sending the next one so Abaqus can process GUI events and repaint.
+- After each visible modeling or inspection step, update the active viewport and force a refresh:
+
+```python
+vp = session.viewports[session.viewports.keys()[0]]
+vp.setValues(displayedObject=target_object)
+try:
+    vp.view.fitView()
+except Exception:
+    pass
+vp.forceRefresh()
+```
+
+- For new model construction, use a visible cadence: create or modify one major part, material/section group, assembly operation, mesh operation, load/BC group, or interaction group, then refresh the viewport before continuing.
+- For `.inp` import, accept that `mdb.ModelFromInputFile(...)` is effectively atomic and may only appear after completion. After import, run a stepwise visual review: show each part alone, show the full assembly, then show loads, boundary conditions, interactions, constraints, sets, and surfaces as separate short steps.
+- Prefer script files over inline snippets for stepwise visualization. If a step selector is needed, avoid names that collide with Abaqus constants such as `STEP`; use a namespaced variable such as `CODEX_VIS_STEP`.
+- Tell the user what each visual step is about before sending it, especially when they are watching the Abaqus window. Use concise progress messages such as "showing the bolt part", "returning to full assembly", or "turning on boundary-condition symbols".
+- Do not assume the model tree will expand live. Treat the viewport as the primary observable channel, and use console summaries to confirm model-tree objects such as parts, instances, materials, sections, interactions, loads, and boundary conditions.
 
 ## Job Diagnosis Pattern
 
@@ -108,3 +151,7 @@ If Abaqus is busy, create this flag file manually or from PowerShell:
 ```text
 E:\Abaqus-Codex job\.abaqus_cae_bridge\stop.flag
 ```
+
+
+
+
