@@ -1,6 +1,6 @@
 # Abaqus/CAE Bridge for Codex
 
-让 Codex 连接已经打开的 **Abaqus/CAE**，按你的指令检查、复制或修改有限元模型，并在 CAE 窗口中查看操作结果。也可以查看作业状态、排查求解日志、读取 ODB 概览和导出视口截图。
+让 Codex 连接已经打开的 **Abaqus/CAE**，按你的指令检查、复制或修改有限元模型，并在 CAE 窗口中查看操作结果。也可以查看作业状态、排查求解日志、读取 ODB 概览和导出视口截图。 仓库也包含无需图形桥接的 INP 检查、ODB 提取和单位换算工具。
 
 The skill connects Codex to an open Abaqus/CAE session through a local file bridge. It supports model inspection and editing, job and log diagnostics, ODB summaries, and viewport capture.
 
@@ -68,7 +68,27 @@ python $sender --capture-viewport '.\viewport.png'
 python $sender --stop
 ```
 
-公开版本的 `--submit-job Job-1 --timeout 3600` 会提交 CAE 中已存在的作业并等待求解结束。在等待期间，桥接可能无法处理其他指令。发送端超时也不会自动取消求解。请从作业状态、日志和结果确认分析是否完成。
+要提交 CAE 中已存在的作业，可以运行 `python $sender --submit-job Job-1`。当前版本开启 Abaqus 一致性检查，提交后即返回。请用 `--monitor-job-status Job-1` 和求解日志跟踪进度。提交返回或发送端超时都不能证明求解已完成，发送端超时也不会自动取消作业。
+
+## 离线分析
+
+以下工具可直接检查文件，无需启动 Abaqus/CAE 的图形桥接。运行前把示例路径替换成实际路径。
+
+| 工具 | 能做什么 | 运行环境 |
+| --- | --- | --- |
+| [`abaqus_diagnostics.py`](scripts/abaqus_diagnostics.py) | 对 INP 进行静态检查，或根据作业文件汇总状态和日志线索 | 系统 Python 3 |
+| [`abaqus_odb_extract.py`](scripts/abaqus_odb_extract.py) | 只读提取 ODB 字段、历史输出和能量记录 | 对应版本的 Abaqus Python |
+| [`abaqus_units.py`](scripts/abaqus_units.py) | 在 SI 与 N–mm–s–tonne 体系之间转换指定量 | 系统 Python 3 |
+
+```powershell
+python (Join-Path $skillDir 'scripts\abaqus_diagnostics.py') inp-check '.\Job-1.inp'
+python (Join-Path $skillDir 'scripts\abaqus_diagnostics.py') monitor (Join-Path $PWD 'Job-1')
+abaqus python (Join-Path $skillDir 'scripts\abaqus_odb_extract.py') '.\Job-1.odb' --field U
+```
+
+INP 检查用于发现常见问题。完整模型检查仍需使用 Abaqus。单位转换只适用于明确采用上述单位体系的任务。ODB 工具的 `ok: true` 表示提取成功，求解状态需另行核实。详见[离线分析与验证说明](references/analysis-workflow.md)。
+
+[参考资料目录](references/upstream-catalog.md)按主题列出脚本和子程序资料。上游来源、版本和兼容性说明见[来源审查](references/source-review.md)，附带参考资料适用[上游 MIT 许可](references/upstream/LICENSE)。
 
 ## 工作方式与排查
 

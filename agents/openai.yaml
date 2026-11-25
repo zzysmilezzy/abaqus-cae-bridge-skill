@@ -1,6 +1,6 @@
 interface:
   display_name: "Abaqus/CAE Bridge"
-  short_description: "Connect Codex to a visible Abaqus/CAE GUI session."
+  short_description: "Control visible Abaqus and inspect analysis files offline."
   default_prompt: "Use $abaqus-cae-bridge to connect to my open Abaqus/CAE model and run commands while I watch."
 
 policy:

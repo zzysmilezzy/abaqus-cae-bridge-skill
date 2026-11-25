@@ -1,13 +1,13 @@
 ---
 name: abaqus-cae-bridge
-description: Connect to an already-open Abaqus/CAE GUI session so Codex can run Abaqus Python commands in that visible session, update the viewport, inspect or modify models, submit jobs, and diagnose Abaqus analysis failures from .log/.msg/.dat/.sta files. Use when the user asks to connect to Abaqus, control Abaqus while they watch the screen, operate an open CAE model, copy/modify Abaqus models, submit jobs, or debug failed Abaqus runs.
+description: Connect to an already-open Abaqus/CAE GUI session so Codex can run Abaqus Python commands in that visible session, update the viewport, inspect or modify models, submit jobs, and inspect INP, solver logs and ODB files offline, with version-aware analysis and subroutine references. Use when the user asks to connect to Abaqus, control Abaqus while they watch the screen, operate an open CAE model, copy/modify Abaqus models, submit jobs, or debug failed Abaqus runs.
 metadata:
-  short-description: Control visible Abaqus/CAE sessions
+  short-description: Visible Abaqus control and offline analysis tools
 ---
 
 # Abaqus/CAE Bridge
 
-Use this skill when the user wants Codex to operate a currently open Abaqus/CAE GUI session and see the viewport change.
+Use the live bridge for an already-open CAE model. For INP/log/ODB inspection or skill maintenance, use the offline tools below without connecting to CAE. Do not resume a cancelled analysis unless requested.
 
 ## Core Rule
 
@@ -59,10 +59,12 @@ python <skill-dir>\scripts\abaqus_bridge_send.py --list-jobs
 python <skill-dir>\scripts\abaqus_bridge_send.py --set-workdir E:\temp\AbaqusRun
 python <skill-dir>\scripts\abaqus_bridge_send.py --monitor-job-status
 python <skill-dir>\scripts\abaqus_bridge_send.py --monitor-job-status Job-1
-python <skill-dir>\scripts\abaqus_bridge_send.py --submit-job Job-1 --timeout 3600
+python <skill-dir>\scripts\abaqus_bridge_send.py --submit-job Job-1
 python <skill-dir>\scripts\abaqus_bridge_send.py --inspect-odb E:\temp\AbaqusRun\Job-1.odb
 python <skill-dir>\scripts\abaqus_bridge_send.py --capture-viewport E:\temp\AbaqusRun\viewport.png
 ```
+
+The submit helper now enables consistency checking and returns without waiting. Its success means submission, not completed analysis; monitor solver files separately. A sender timeout does not cancel a command or solver.
 
 Use `--get-model-info` before repair scripts when object names are uncertain. Use `--monitor-job-status <job>` before opening large solver files manually; it tails `.sta`/`.log` and extracts high-value diagnostics from `.msg`/`.dat`. Use `--inspect-odb` for fast metadata checks before deeper post-processing. Use `--capture-viewport` when the user needs a local image of the current CAE viewport.
 
@@ -155,3 +157,39 @@ E:\Abaqus-Codex job\.abaqus_cae_bridge\stop.flag
 
 
 
+
+
+## Offline Analysis Tools and References (2026-10 update)
+
+Read [references/analysis-workflow.md](references/analysis-workflow.md) for input confirmation, isolated execution, controlled diagnostic trials and evidence of a valid result. Preserve the user's unit system, supports, contact intent and bolt holding mode; upstream examples do not supply physical defaults for a real model. A missing lock, an ODB file or CAE SUBMITTED status alone does not prove success. Verify positive-time frames, the end of every requested step, actual loading, balance and relevant energy histories. Repeated failures without improvement require a more discriminating diagnostic before more variants.
+
+Run the following tools without the GUI bridge:
+
+```powershell
+# System Python 3; static heuristics, not an Abaqus datacheck
+python <skill-dir>\scripts\abaqus_diagnostics.py inp-check <absolute.inp>
+python <skill-dir>\scripts\abaqus_diagnostics.py inp-check <absolute.inp> --units N-mm-s-tonne
+python <skill-dir>\scripts\abaqus_diagnostics.py monitor <absolute-job-path-without-extension>
+python <skill-dir>\scripts\abaqus_units.py to-local density 7850
+
+# Abaqus Python 2.7 or 3; read-only ODB, no CAE connection
+abaqus python <skill-dir>\scripts\abaqus_odb_extract.py <absolute.odb> --field U
+abaqus python <skill-dir>\scripts\abaqus_odb_extract.py <absolute.odb> --field S
+abaqus python <skill-dir>\scripts\abaqus_odb_extract.py <absolute.odb> --field RF --set RP-1 --sum
+abaqus python <skill-dir>\scripts\abaqus_odb_extract.py <absolute.odb> --history U3 --region "Node ASSEMBLY.2"
+abaqus python <skill-dir>\scripts\abaqus_odb_extract.py <absolute.odb> --energy
+```
+
+Only supply `--units N-mm-s-tonne` after confirming that convention. The converter explicitly handles that convention, not all Abaqus models. The checker resolves includes and scopes node/element labels; it does not validate full keyword semantics, connectivity or physical sufficiency.
+
+The ODB extractor reports vector magnitude, Mises from tensor S, scalar absolute extrema with signed values, actual history `(time,value)` pairs and energies including ALLSD. Select components by label or zero-based index. Repeated instance-set names require `--instance`; assembly sets take precedence. Sum is restricted to RF/RM/CF on a selected set. Undefined COPEN values (`abs>=1e30`) are excluded and counted. Initial-only ODBs require `--allow-initial` and are never marked converged. Extraction errors return a nonzero code.
+
+Also require the extractor's JSON `ok` to be true: the local Abaqus 2021 batch launcher was observed to discard the script's nonzero exit code. `ok` means extraction succeeded; `solver_completion_verified` is separate and must be checked against solver logs.
+
+Check the actual runtime/API: local Abaqus 2021 uses Python 2.7, while system Python uses 3. In persistent bridge scripts, imports may shadow builtins; use an explicit builtins module for reductions when needed. Treat snippets containing f-strings or release-dependent methods as requiring porting/validation.
+
+For modeling, static, thermal, fatigue, composite, XFEM and Fortran topics, read [references/upstream-catalog.md](references/upstream-catalog.md) and only the needed entries. The 42 upstream reference files are MIT snapshots, **not locally validated executable templates or independently verified official API documentation**. Subroutines need an appropriate compiler and minimal interface/single-element verification. Do not replace the main-thread bridge with a headless example, new Mdb(), socket or background-thread CAE access.
+
+Read [references/source-review.md](references/source-review.md) for pinned provenance, compatibility limits and corrections. Keep original models/disk files distinguishable from accepted copies and unsaved trials.
+
+Stopping the bridge does not stop a solver. On cancellation, stop only the identified task-owned job/process and verify it ended, then stop the bridge. Keep CAE and unrelated analyses intact.

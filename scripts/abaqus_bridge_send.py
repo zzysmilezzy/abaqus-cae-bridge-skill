@@ -185,10 +185,12 @@ if job_name not in mdb.jobs:
     raise KeyError("Job not found: " + job_name)
 
 job = mdb.jobs[job_name]
-job.submit(consistencyChecking=False)
-job.waitForCompletion()
+from abaqusConstants import ON
+job.submit(consistencyChecking=ON)
 print(json.dumps({
     "success": True,
+    "operation": "submit",
+    "completion_verified": False,
     "job": job_name,
     "status": str(getattr(job, "status", "UNKNOWN")),
 }, indent=2, sort_keys=True))
@@ -451,8 +453,6 @@ def _selected_command_count(args):
 def _default_timeout(args):
     if args.timeout is not None:
         return args.timeout
-    if args.submit_job:
-        return 3600.0
     if args.inspect_odb:
         return 120.0
     if args.capture_viewport:
@@ -478,7 +478,7 @@ def main(argv=None):
     parser.add_argument("--set-workdir", metavar="PATH",
                         help="Change Abaqus current working directory")
     parser.add_argument("--submit-job", metavar="JOB_NAME",
-                        help="Submit an existing Abaqus job and wait for completion")
+                        help="Submit with consistency checking and return without waiting")
     parser.add_argument("--monitor-job-status", nargs="?", const="", metavar="JOB_NAME",
                         help="List jobs, or inspect .lck/.log/.sta/.msg/.dat files for JOB_NAME")
     parser.add_argument("--inspect-odb", metavar="ODB_PATH",
